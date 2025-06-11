@@ -34,6 +34,12 @@
             border: 1px solid #ddd;
             border-radius: 4px;
         }
+        select {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100px;
+        }
         button {
             padding: 10px 15px;
             background-color: #4CAF50;
@@ -77,6 +83,14 @@
             color: red;
             margin-top: 5px;
         }
+        .checked-row {
+            background-color: #e8f5e9 !important;
+        }
+        .job-warrior { color: #c41e3a; }
+        .job-thief { color: #fff569; }
+        .job-magician { color: #69ccf0; }
+        .job-soulmaster { color: #abd473; }
+        .job-taoist { color: #f58cba; }
     </style>
 </head>
 <body>
@@ -85,6 +99,13 @@
     <div class="input-section">
         <div class="nickname-input">
             <input type="text" id="nicknameInput" placeholder="닉네임을 입력하세요">
+            <select id="jobSelect">
+                <option value="warrior">전사</option>
+                <option value="thief">도적</option>
+                <option value="magician">법사</option>
+                <option value="soulmaster">직자</option>
+                <option value="taoist">도가</option>
+            </select>
             <button id="addButton">추가</button>
         </div>
         <div id="errorMessage" class="error-message"></div>
@@ -96,6 +117,7 @@
             <thead>
                 <tr>
                     <th>닉네임</th>
+                    <th>직업</th>
                     <th>발록 컨텐츠 진행</th>
                     <th>작업</th>
                 </tr>
@@ -112,6 +134,15 @@
     </div>
 
     <script>
+        // 직업 정보
+        const jobInfo = {
+            warrior: { name: '전사', class: 'job-warrior' },
+            thief: { name: '도적', class: 'job-thief' },
+            magician: { name: '법사', class: 'job-magician' },
+            soulmaster: { name: '직자', class: 'job-soulmaster' },
+            taoist: { name: '도가', class: 'job-taoist' }
+        };
+
         // 로컬 스토리지에서 데이터 로드
         let nicknames = JSON.parse(localStorage.getItem('nicknames')) || [];
         let lastResetDate = localStorage.getItem('lastResetDate') || new Date().toDateString();
@@ -136,8 +167,10 @@
         // 닉네임 추가 함수
         function addNickname() {
             const nicknameInput = document.getElementById('nicknameInput');
+            const jobSelect = document.getElementById('jobSelect');
             const errorMessage = document.getElementById('errorMessage');
             const nickname = nicknameInput.value.trim();
+            const job = jobSelect.value;
             
             errorMessage.textContent = '';
             
@@ -153,6 +186,7 @@
             
             nicknames.push({
                 name: nickname,
+                job: job,
                 balrogCompleted: false,
                 addedDate: new Date().toISOString()
             });
@@ -163,7 +197,7 @@
             nicknameInput.focus();
         }
         
-        // 닉네임 목록 렌더링
+        // 닉네임 목록 렌더링 (체크된 항목 상단에, 나머지는 직업별 정렬)
         function renderNicknameList() {
             const tbody = document.getElementById('nicknameList');
             tbody.innerHTML = '';
@@ -171,7 +205,7 @@
             if (nicknames.length === 0) {
                 const tr = document.createElement('tr');
                 const td = document.createElement('td');
-                td.colSpan = 3;
+                td.colSpan = 4;
                 td.textContent = '등록된 닉네임이 없습니다.';
                 td.style.textAlign = 'center';
                 td.style.color = '#999';
@@ -180,42 +214,78 @@
                 return;
             }
             
-            nicknames.forEach((item, index) => {
-                const tr = document.createElement('tr');
-                
-                // 닉네임 셀
-                const nameTd = document.createElement('td');
-                nameTd.textContent = item.name;
-                tr.appendChild(nameTd);
-                
-                // 발록 컨텐츠 체크박스 셀
-                const balrogTd = document.createElement('td');
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.checked = item.balrogCompleted;
-                checkbox.addEventListener('change', function() {
-                    nicknames[index].balrogCompleted = this.checked;
-                    saveToLocalStorage();
-                });
-                balrogTd.appendChild(checkbox);
-                tr.appendChild(balrogTd);
-                
-                // 삭제 버튼 셀
-                const actionTd = document.createElement('td');
-                const deleteButton = document.createElement('button');
-                deleteButton.textContent = '삭제';
-                deleteButton.addEventListener('click', function() {
-                    if (confirm(`'${item.name}'을(를) 목록에서 삭제하시겠습니까?`)) {
-                        nicknames.splice(index, 1);
-                        saveToLocalStorage();
-                        renderNicknameList();
-                    }
-                });
-                actionTd.appendChild(deleteButton);
-                tr.appendChild(actionTd);
-                
-                tbody.appendChild(tr);
+            // 체크된 항목과 체크되지 않은 항목 분리
+            const checkedItems = nicknames.filter(item => item.balrogCompleted);
+            const uncheckedItems = nicknames.filter(item => !item.balrogCompleted);
+            
+            // 체크되지 않은 항목을 직업별로 정렬
+            uncheckedItems.sort((a, b) => {
+                // 직업 순서: 전사 > 도적 > 법사 > 직자 > 도가
+                const jobOrder = ['warrior', 'thief', 'magician', 'soulmaster', 'taoist'];
+                return jobOrder.indexOf(a.job) - jobOrder.indexOf(b.job) || a.name.localeCompare(b.name);
             });
+            
+            // 체크된 항목 먼저 추가
+            checkedItems.forEach((item, index) => {
+                addRowToTable(item, true);
+            });
+            
+            // 체크되지 않은 항목 추가
+            uncheckedItems.forEach((item, index) => {
+                addRowToTable(item, false);
+            });
+        }
+        
+        // 테이블에 행 추가 함수
+        function addRowToTable(item, isChecked) {
+            const tbody = document.getElementById('nicknameList');
+            const index = nicknames.findIndex(n => n.name === item.name);
+            const tr = document.createElement('tr');
+            
+            if (isChecked) {
+                tr.classList.add('checked-row');
+            }
+            
+            // 닉네임 셀
+            const nameTd = document.createElement('td');
+            nameTd.textContent = item.name;
+            nameTd.classList.add(jobInfo[item.job].class);
+            tr.appendChild(nameTd);
+            
+            // 직업 셀
+            const jobTd = document.createElement('td');
+            jobTd.textContent = jobInfo[item.job].name;
+            jobTd.classList.add(jobInfo[item.job].class);
+            tr.appendChild(jobTd);
+            
+            // 발록 컨텐츠 체크박스 셀
+            const balrogTd = document.createElement('td');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = item.balrogCompleted;
+            checkbox.addEventListener('change', function() {
+                nicknames[index].balrogCompleted = this.checked;
+                saveToLocalStorage();
+                renderNicknameList(); // 체크 상태 변경 시 목록 재정렬
+            });
+            balrogTd.appendChild(checkbox);
+            tr.appendChild(balrogTd);
+            
+            // 삭제 버튼 셀
+            const actionTd = document.createElement('td');
+            const deleteButton = document.createElement('button');
+            deleteButton.textContent = '삭제';
+            deleteButton.addEventListener('click', function() {
+                if (confirm(`'${item.name}'을(를) 목록에서 삭제하시겠습니까?`)) {
+                    nicknames.splice(index, 1);
+                    saveToLocalStorage();
+                    renderNicknameList();
+                }
+            });
+            actionTd.appendChild(deleteButton);
+            tr.appendChild(actionTd);
+            
+            tbody.appendChild(tr);
         }
         
         // 로컬 스토리지에 저장
