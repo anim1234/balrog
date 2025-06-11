@@ -15,6 +15,7 @@
         h1 {
             color: #333;
             text-align: center;
+            margin-bottom: 20px;
         }
         .input-section {
             background-color: white;
@@ -33,22 +34,28 @@
             padding: 10px;
             border: 1px solid #ddd;
             border-radius: 4px;
+            font-size: 14px;
         }
         select {
             padding: 10px;
             border: 1px solid #ddd;
             border-radius: 4px;
             width: 100px;
+            font-size: 14px;
         }
         button {
             padding: 10px 15px;
-            background-color: #4CAF50;
             color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
         }
-        button:hover {
+        #addButton {
+            background-color: #4CAF50;
+        }
+        #addButton:hover {
             background-color: #45a049;
         }
         .list-section {
@@ -60,6 +67,7 @@
         table {
             width: 100%;
             border-collapse: collapse;
+            margin-bottom: 20px;
         }
         th, td {
             padding: 12px;
@@ -68,29 +76,74 @@
         }
         th {
             background-color: #f2f2f2;
+            font-weight: bold;
         }
         tr:hover {
-            background-color: #f5f5f5;
+            background-color: #f9f9f9;
         }
         .reset-info {
-            margin-top: 20px;
-            padding: 10px;
+            padding: 12px;
             background-color: #e7f3fe;
             border-left: 6px solid #2196F3;
             border-radius: 4px;
+            margin-bottom: 15px;
         }
         .error-message {
             color: red;
             margin-top: 5px;
+            font-size: 13px;
+        }
+        .success-message {
+            color: #4CAF50;
+            margin-top: 5px;
+            font-size: 13px;
         }
         .checked-row {
             background-color: #e8f5e9 !important;
         }
         .job-warrior { color: #c41e3a; }
-        .job-thief { color: #fff569; }
+        .job-thief { color: #e6b800; }
         .job-magician { color: #69ccf0; }
         .job-soulmaster { color: #abd473; }
         .job-taoist { color: #f58cba; }
+        .button-container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+        }
+        .danger-button {
+            background-color: #f44336;
+        }
+        .danger-button:hover {
+            background-color: #d32f2f;
+        }
+        .backup-button {
+            background-color: #2196F3;
+        }
+        .backup-button:hover {
+            background-color: #0b7dda;
+        }
+        .file-input {
+            display: none;
+        }
+        .backup-controls {
+            display: flex;
+            gap: 10px;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+        }
+        .action-buttons button {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+        #statusMessage {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -109,6 +162,7 @@
             <button id="addButton">추가</button>
         </div>
         <div id="errorMessage" class="error-message"></div>
+        <div id="statusMessage"></div>
     </div>
     
     <div class="list-section">
@@ -118,18 +172,25 @@
                 <tr>
                     <th>닉네임</th>
                     <th>직업</th>
-                    <th>발록 컨텐츠 진행</th>
+                    <th>발록 진행</th>
                     <th>작업</th>
                 </tr>
             </thead>
-            <tbody id="nicknameList">
-                <!-- 닉네임 목록이 여기에 추가됩니다 -->
-            </tbody>
+            <tbody id="nicknameList"></tbody>
         </table>
         
         <div class="reset-info">
             <p>발록 컨텐츠 진행 여부는 매일 자정(00:00)에 초기화됩니다.</p>
-            <p>다음 초기화까지 남은 시간: <span id="resetTimer"></span></p>
+            <p>다음 초기화까지: <span id="resetTimer"></span></p>
+        </div>
+        
+        <div class="button-container">
+            <div class="backup-controls">
+                <button id="exportButton" class="backup-button">데이터 백업</button>
+                <button id="importButton" class="backup-button">데이터 복원</button>
+                <input type="file" id="fileInput" class="file-input" accept=".json">
+            </div>
+            <button id="resetAllButton" class="danger-button">전체 초기화</button>
         </div>
     </div>
 
@@ -143,61 +204,78 @@
             taoist: { name: '도가', class: 'job-taoist' }
         };
 
-        // 로컬 스토리지에서 데이터 안전하게 로드
-        let nicknames;
-        try {
-            nicknames = JSON.parse(localStorage.getItem('nicknames')) || [];
-        } catch (e) {
-            console.error("로컬 스토리지 파싱 오류:", e);
-            nicknames = [];
-        }
+        // 데이터 초기화
+        let nicknames = [];
+        let lastResetDate = '';
         
-        let lastResetDate = localStorage.getItem('lastResetDate') || new Date().toDateString();
-        
-        // 페이지 로드 시 초기화
+        // DOM이 완전히 로드된 후 실행
         document.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+        });
+
+        // 애플리케이션 초기화
+        function initializeApp() {
+            loadData();
+            setupEventListeners();
             renderNicknameList();
-            updateResetTimer();
-            setInterval(updateResetTimer, 1000);
+            startResetTimer();
             checkDailyReset();
-            
-            // 엔터 키로 추가 가능
-            document.getElementById('nicknameInput').addEventListener('keypress', function(e) {
+        }
+
+        // 데이터 로드
+        function loadData() {
+            try {
+                const savedData = localStorage.getItem('nicknames');
+                const savedDate = localStorage.getItem('lastResetDate');
+                
+                if (savedData) {
+                    nicknames = JSON.parse(savedData);
+                    showStatus('데이터를 성공적으로 불러왔습니다.', 'success');
+                }
+                
+                lastResetDate = savedDate || new Date().toDateString();
+            } catch (e) {
+                console.error("데이터 로드 오류:", e);
+                showStatus('데이터 로드 중 오류가 발생했습니다.', 'error');
+                nicknames = [];
+            }
+        }
+
+        // 이벤트 리스너 설정
+        function setupEventListeners() {
+            // 닉네임 추가
+            document.getElementById('addButton').addEventListener('click', addNickname);
+            document.getElementById('nicknameInput').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') addNickname();
             });
             
-            // 추가 버튼 이벤트 리스너 (안정화 버전)
-            document.getElementById('addButton').addEventListener('click', function() {
-                addNickname();
-            });
-        });
-        
-        // 닉네임 추가 함수 (문제 해결 버전)
+            // 데이터 관리
+            document.getElementById('resetAllButton').addEventListener('click', resetAllData);
+            document.getElementById('exportButton').addEventListener('click', exportData);
+            document.getElementById('importButton').addEventListener('click', triggerFileInput);
+            document.getElementById('fileInput').addEventListener('change', importData);
+        }
+
+        // 닉네임 추가 함수
         function addNickname() {
             const nicknameInput = document.getElementById('nicknameInput');
-            const jobSelect = document.getElementById('jobSelect');
-            const errorMessage = document.getElementById('errorMessage');
             const nickname = nicknameInput.value.trim();
-            const job = jobSelect.value;
+            const job = document.getElementById('jobSelect').value;
+            const errorMessage = document.getElementById('errorMessage');
             
-            // 에러 메시지 초기화
-            errorMessage.textContent = '';
-            
-            // 유효성 검사 1: 빈 입력
+            // 유효성 검사
             if (!nickname) {
-                errorMessage.textContent = '닉네임을 입력해주세요.';
-                nicknameInput.focus();
+                showError('닉네임을 입력해주세요.');
                 return;
             }
             
-            // 유효성 검사 2: 중복 닉네임 (대소문자 구분 없음)
-            const isDuplicate = nicknames.some(item => 
-                item.name.toLowerCase() === nickname.toLowerCase()
-            );
+            if (nickname.length > 12) {
+                showError('닉네임은 12자 이내로 입력해주세요.');
+                return;
+            }
             
-            if (isDuplicate) {
-                errorMessage.textContent = '이미 존재하는 닉네임입니다.';
-                nicknameInput.focus();
+            if (nicknames.some(item => item.name.toLowerCase() === nickname.toLowerCase())) {
+                showError('이미 존재하는 닉네임입니다.');
                 return;
             }
             
@@ -209,136 +287,211 @@
                 addedDate: new Date().toISOString()
             });
             
-            // 로컬 스토리지 저장
+            saveData();
+            renderNicknameList();
+            nicknameInput.value = '';
+            nicknameInput.focus();
+            showStatus(`"${nickname}" 닉네임이 추가되었습니다.`, 'success');
+            clearError();
+        }
+
+        // 데이터 저장
+        function saveData() {
             try {
                 localStorage.setItem('nicknames', JSON.stringify(nicknames));
-                renderNicknameList();
-                nicknameInput.value = '';
-                nicknameInput.focus();
+                localStorage.setItem('lastResetDate', lastResetDate);
             } catch (e) {
-                console.error("로컬 스토리지 저장 실패:", e);
-                errorMessage.textContent = '저장에 실패했습니다. 브라우저 설정을 확인해주세요.';
+                console.error("데이터 저장 오류:", e);
+                showError('데이터 저장에 실패했습니다. 저장 공간을 확인해주세요.');
             }
         }
-        
-        // 닉네임 목록 렌더링 (체크된 항목 상단에, 나머지는 직업별 정렬)
+
+        // 목록 렌더링
         function renderNicknameList() {
             const tbody = document.getElementById('nicknameList');
             tbody.innerHTML = '';
             
             if (nicknames.length === 0) {
-                const tr = document.createElement('tr');
-                const td = document.createElement('td');
-                td.colSpan = 4;
-                td.textContent = '등록된 닉네임이 없습니다.';
-                td.style.textAlign = 'center';
-                td.style.color = '#999';
-                tr.appendChild(td);
-                tbody.appendChild(tr);
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999">등록된 닉네임이 없습니다</td></tr>';
                 return;
             }
             
-            // 체크된 항목과 체크되지 않은 항목 분리
-            const checkedItems = nicknames.filter(item => item.balrogCompleted);
-            const uncheckedItems = nicknames.filter(item => !item.balrogCompleted);
-            
-            // 체크되지 않은 항목을 직업별로 정렬
-            uncheckedItems.sort((a, b) => {
-                const jobOrder = ['warrior', 'thief', 'magician', 'soulmaster', 'taoist'];
-                return jobOrder.indexOf(a.job) - jobOrder.indexOf(b.job) || a.name.localeCompare(b.name);
-            });
-            
-            // 체크된 항목 먼저 추가
-            checkedItems.forEach((item, index) => {
-                addRowToTable(item, true);
-            });
-            
-            // 체크되지 않은 항목 추가
-            uncheckedItems.forEach((item, index) => {
-                addRowToTable(item, false);
-            });
-        }
-        
-        // 테이블에 행 추가 함수
-        function addRowToTable(item, isChecked) {
-            const tbody = document.getElementById('nicknameList');
-            const index = nicknames.findIndex(n => n.name === item.name);
-            const tr = document.createElement('tr');
-            
-            if (isChecked) tr.classList.add('checked-row');
-            
-            // 닉네임 셀
-            const nameTd = document.createElement('td');
-            nameTd.textContent = item.name;
-            nameTd.classList.add(jobInfo[item.job].class);
-            tr.appendChild(nameTd);
-            
-            // 직업 셀
-            const jobTd = document.createElement('td');
-            jobTd.textContent = jobInfo[item.job].name;
-            jobTd.classList.add(jobInfo[item.job].class);
-            tr.appendChild(jobTd);
-            
-            // 체크박스 셀
-            const balrogTd = document.createElement('td');
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.checked = item.balrogCompleted;
-            checkbox.addEventListener('change', function() {
-                nicknames[index].balrogCompleted = this.checked;
-                localStorage.setItem('nicknames', JSON.stringify(nicknames));
-                renderNicknameList(); // 체크 시 재정렬
-            });
-            balrogTd.appendChild(checkbox);
-            tr.appendChild(balrogTd);
-            
-            // 삭제 버튼 셀
-            const actionTd = document.createElement('td');
-            const deleteButton = document.createElement('button');
-            deleteButton.textContent = '삭제';
-            deleteButton.addEventListener('click', function() {
-                if (confirm(`'${item.name}'을(를) 삭제하시겠습니까?`)) {
-                    nicknames.splice(index, 1);
-                    localStorage.setItem('nicknames', JSON.stringify(nicknames));
-                    renderNicknameList();
+            // 체크된 항목 먼저, 직업 순으로 정렬
+            const sortedItems = [...nicknames].sort((a, b) => {
+                // 체크된 항목 우선
+                if (a.balrogCompleted !== b.balrogCompleted) {
+                    return b.balrogCompleted - a.balrogCompleted;
                 }
+                // 직업 순서: 전사 > 도적 > 법사 > 직자 > 도가
+                const jobOrder = ['warrior', 'thief', 'magician', 'soulmaster', 'taoist'];
+                return jobOrder.indexOf(a.job) - jobOrder.indexOf(b.job);
             });
-            actionTd.appendChild(deleteButton);
-            tr.appendChild(actionTd);
             
-            tbody.appendChild(tr);
+            sortedItems.forEach(item => {
+                const tr = document.createElement('tr');
+                if (item.balrogCompleted) tr.classList.add('checked-row');
+                
+                tr.innerHTML = `
+                    <td class="${jobInfo[item.job].class}">${item.name}</td>
+                    <td class="${jobInfo[item.job].class}">${jobInfo[item.job].name}</td>
+                    <td><input type="checkbox" ${item.balrogCompleted ? 'checked' : ''}></td>
+                    <td class="action-buttons">
+                        <button class="danger-button" data-action="delete">삭제</button>
+                    </td>
+                `;
+                
+                // 체크박스 이벤트
+                tr.querySelector('input').addEventListener('change', (e) => {
+                    item.balrogCompleted = e.target.checked;
+                    saveData();
+                    renderNicknameList();
+                });
+                
+                // 삭제 버튼 이벤트
+                tr.querySelector('button').addEventListener('click', () => {
+                    deleteNickname(item.name);
+                });
+                
+                tbody.appendChild(tr);
+            });
         }
-        
-        // 초기화 타이머 업데이트
+
+        // 닉네임 삭제
+        function deleteNickname(name) {
+            if (confirm(`"${name}"을(를) 정말 삭제하시겠습니까?`)) {
+                nicknames = nicknames.filter(n => n.name !== name);
+                saveData();
+                renderNicknameList();
+                showStatus(`"${name}" 닉네임이 삭제되었습니다.`, 'success');
+            }
+        }
+
+        // 전체 초기화
+        function resetAllData() {
+            if (confirm('⚠️ 모든 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다!')) {
+                localStorage.clear();
+                nicknames = [];
+                lastResetDate = new Date().toDateString();
+                renderNicknameList();
+                showStatus('모든 데이터가 초기화되었습니다.', 'success');
+            }
+        }
+
+        // 데이터 백업
+        function exportData() {
+            try {
+                const data = {
+                    nicknames: nicknames,
+                    lastResetDate: lastResetDate,
+                    exportedAt: new Date().toISOString()
+                };
+                
+                const dataStr = JSON.stringify(data, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `발록데이터_백업_${new Date().toISOString().slice(0,10)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                showStatus('백업 파일이 다운로드되었습니다.', 'success');
+            } catch (e) {
+                console.error("백업 오류:", e);
+                showError('백업 파일 생성 중 오류가 발생했습니다.');
+            }
+        }
+
+        // 파일 입력 트리거
+        function triggerFileInput() {
+            document.getElementById('fileInput').click();
+        }
+
+        // 데이터 복원
+        function importData(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const importedData = JSON.parse(event.target.result);
+                    
+                    // 데이터 유효성 검사
+                    if (!importedData.nicknames || !Array.isArray(importedData.nicknames)) {
+                        throw new Error("잘못된 데이터 형식");
+                    }
+                    
+                    if (!confirm(`[${file.name}]\n기존 데이터를 백업 데이터로 교체하시겠습니까?`)) {
+                        e.target.value = '';
+                        return;
+                    }
+                    
+                    nicknames = importedData.nicknames;
+                    lastResetDate = importedData.lastResetDate || new Date().toDateString();
+                    saveData();
+                    renderNicknameList();
+                    showStatus(`성공적으로 ${nicknames.length}개의 데이터를 불러왔습니다!`, 'success');
+                } catch (error) {
+                    console.error("복원 오류:", error);
+                    showError('올바른 백업 파일을 선택해주세요. 파일이 손상되었을 수 있습니다.');
+                }
+                e.target.value = '';
+            };
+            reader.readAsText(file);
+        }
+
+        // 초기화 타이머
+        function startResetTimer() {
+            updateResetTimer();
+            setInterval(updateResetTimer, 1000);
+        }
+
         function updateResetTimer() {
             const now = new Date();
-            const midnight = new Date();
+            const midnight = new Date(now);
             midnight.setHours(24, 0, 0, 0);
             
             const diff = midnight - now;
-            const hours = Math.floor(diff / (1000 * 60 * 60));
-            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-            const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+            const h = Math.floor(diff / (1000 * 60 * 60)).toString().padStart(2, '0');
+            const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)).toString().padStart(2, '0');
+            const s = Math.floor((diff % (1000 * 60)) / 1000).toString().padStart(2, '0');
             
-            document.getElementById('resetTimer').textContent = 
-                `${hours}시간 ${minutes}분 ${seconds}초`;
+            document.getElementById('resetTimer').textContent = `${h}:${m}:${s}`;
         }
-        
-        // 매일 자정에 체크 초기화
+
+        // 매일 자정 체크
         function checkDailyReset() {
             const today = new Date().toDateString();
-            
             if (lastResetDate !== today) {
-                nicknames = nicknames.map(item => ({
-                    ...item,
-                    balrogCompleted: false
-                }));
-                
+                nicknames.forEach(item => item.balrogCompleted = false);
                 lastResetDate = today;
-                localStorage.setItem('nicknames', JSON.stringify(nicknames));
-                localStorage.setItem('lastResetDate', lastResetDate);
+                saveData();
                 renderNicknameList();
             }
+        }
+
+        // 상태 메시지 표시
+        function showStatus(message, type) {
+            const statusElement = document.getElementById('statusMessage');
+            statusElement.textContent = message;
+            statusElement.className = type === 'success' ? 'success-message' : 'error-message';
+            statusElement.style.display = 'block';
+            
+            setTimeout(() => {
+                statusElement.style.display = 'none';
+            }, 5000);
+        }
+
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+        }
+
+        function clearError() {
+            document.getElementById('errorMessage').textContent = '';
         }
     </script>
 </body>
