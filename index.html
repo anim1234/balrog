@@ -143,8 +143,15 @@
             taoist: { name: '도가', class: 'job-taoist' }
         };
 
-        // 로컬 스토리지에서 데이터 로드
-        let nicknames = JSON.parse(localStorage.getItem('nicknames')) || [];
+        // 로컬 스토리지에서 데이터 안전하게 로드
+        let nicknames;
+        try {
+            nicknames = JSON.parse(localStorage.getItem('nicknames')) || [];
+        } catch (e) {
+            console.error("로컬 스토리지 파싱 오류:", e);
+            nicknames = [];
+        }
+        
         let lastResetDate = localStorage.getItem('lastResetDate') || new Date().toDateString();
         
         // 페이지 로드 시 초기화
@@ -154,17 +161,18 @@
             setInterval(updateResetTimer, 1000);
             checkDailyReset();
             
-            // 엔터 키로도 추가 가능하도록 설정
+            // 엔터 키로 추가 가능
             document.getElementById('nicknameInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    addNickname();
-                }
+                if (e.key === 'Enter') addNickname();
             });
             
-            document.getElementById('addButton').addEventListener('click', addNickname);
+            // 추가 버튼 이벤트 리스너 (안정화 버전)
+            document.getElementById('addButton').addEventListener('click', function() {
+                addNickname();
+            });
         });
         
-        // 닉네임 추가 함수
+        // 닉네임 추가 함수 (문제 해결 버전)
         function addNickname() {
             const nicknameInput = document.getElementById('nicknameInput');
             const jobSelect = document.getElementById('jobSelect');
@@ -172,18 +180,28 @@
             const nickname = nicknameInput.value.trim();
             const job = jobSelect.value;
             
+            // 에러 메시지 초기화
             errorMessage.textContent = '';
             
+            // 유효성 검사 1: 빈 입력
             if (!nickname) {
                 errorMessage.textContent = '닉네임을 입력해주세요.';
+                nicknameInput.focus();
                 return;
             }
             
-            if (nicknames.some(item => item.name.toLowerCase() === nickname.toLowerCase())) {
+            // 유효성 검사 2: 중복 닉네임 (대소문자 구분 없음)
+            const isDuplicate = nicknames.some(item => 
+                item.name.toLowerCase() === nickname.toLowerCase()
+            );
+            
+            if (isDuplicate) {
                 errorMessage.textContent = '이미 존재하는 닉네임입니다.';
+                nicknameInput.focus();
                 return;
             }
             
+            // 새 항목 추가
             nicknames.push({
                 name: nickname,
                 job: job,
@@ -191,10 +209,16 @@
                 addedDate: new Date().toISOString()
             });
             
-            saveToLocalStorage();
-            renderNicknameList();
-            nicknameInput.value = '';
-            nicknameInput.focus();
+            // 로컬 스토리지 저장
+            try {
+                localStorage.setItem('nicknames', JSON.stringify(nicknames));
+                renderNicknameList();
+                nicknameInput.value = '';
+                nicknameInput.focus();
+            } catch (e) {
+                console.error("로컬 스토리지 저장 실패:", e);
+                errorMessage.textContent = '저장에 실패했습니다. 브라우저 설정을 확인해주세요.';
+            }
         }
         
         // 닉네임 목록 렌더링 (체크된 항목 상단에, 나머지는 직업별 정렬)
@@ -220,7 +244,6 @@
             
             // 체크되지 않은 항목을 직업별로 정렬
             uncheckedItems.sort((a, b) => {
-                // 직업 순서: 전사 > 도적 > 법사 > 직자 > 도가
                 const jobOrder = ['warrior', 'thief', 'magician', 'soulmaster', 'taoist'];
                 return jobOrder.indexOf(a.job) - jobOrder.indexOf(b.job) || a.name.localeCompare(b.name);
             });
@@ -242,9 +265,7 @@
             const index = nicknames.findIndex(n => n.name === item.name);
             const tr = document.createElement('tr');
             
-            if (isChecked) {
-                tr.classList.add('checked-row');
-            }
+            if (isChecked) tr.classList.add('checked-row');
             
             // 닉네임 셀
             const nameTd = document.createElement('td');
@@ -258,15 +279,15 @@
             jobTd.classList.add(jobInfo[item.job].class);
             tr.appendChild(jobTd);
             
-            // 발록 컨텐츠 체크박스 셀
+            // 체크박스 셀
             const balrogTd = document.createElement('td');
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.checked = item.balrogCompleted;
             checkbox.addEventListener('change', function() {
                 nicknames[index].balrogCompleted = this.checked;
-                saveToLocalStorage();
-                renderNicknameList(); // 체크 상태 변경 시 목록 재정렬
+                localStorage.setItem('nicknames', JSON.stringify(nicknames));
+                renderNicknameList(); // 체크 시 재정렬
             });
             balrogTd.appendChild(checkbox);
             tr.appendChild(balrogTd);
@@ -276,9 +297,9 @@
             const deleteButton = document.createElement('button');
             deleteButton.textContent = '삭제';
             deleteButton.addEventListener('click', function() {
-                if (confirm(`'${item.name}'을(를) 목록에서 삭제하시겠습니까?`)) {
+                if (confirm(`'${item.name}'을(를) 삭제하시겠습니까?`)) {
                     nicknames.splice(index, 1);
-                    saveToLocalStorage();
+                    localStorage.setItem('nicknames', JSON.stringify(nicknames));
                     renderNicknameList();
                 }
             });
@@ -286,12 +307,6 @@
             tr.appendChild(actionTd);
             
             tbody.appendChild(tr);
-        }
-        
-        // 로컬 스토리지에 저장
-        function saveToLocalStorage() {
-            localStorage.setItem('nicknames', JSON.stringify(nicknames));
-            localStorage.setItem('lastResetDate', lastResetDate);
         }
         
         // 초기화 타이머 업데이트
@@ -309,21 +324,19 @@
                 `${hours}시간 ${minutes}분 ${seconds}초`;
         }
         
-        // 매일 자정에 체크 초기화 확인
+        // 매일 자정에 체크 초기화
         function checkDailyReset() {
             const today = new Date().toDateString();
             
             if (lastResetDate !== today) {
-                // 날짜가 변경되었으면 모든 체크박스 초기화
-                nicknames = nicknames.map(item => {
-                    return {
-                        ...item,
-                        balrogCompleted: false
-                    };
-                });
+                nicknames = nicknames.map(item => ({
+                    ...item,
+                    balrogCompleted: false
+                }));
                 
                 lastResetDate = today;
-                saveToLocalStorage();
+                localStorage.setItem('nicknames', JSON.stringify(nicknames));
+                localStorage.setItem('lastResetDate', lastResetDate);
                 renderNicknameList();
             }
         }
